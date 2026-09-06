@@ -1,6 +1,28 @@
 /* 1H Swing Screener — EMA 4/9 + MACD + DMI/ADX */
 'use strict';
 
+/* The UI can be served by the API itself (default) or from somewhere else
+   entirely - a static host with the API on Render. Pass them once as
+   ?api=https://your-service.onrender.com&key=... and they stick. */
+const API = (() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('api')) localStorage.setItem('api_base', q.get('api'));
+  return (q.get('api') || window.SCREENER_API || localStorage.getItem('api_base') || '')
+    .replace(/\/+$/, '');
+})();
+
+const KEY = (() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('key')) localStorage.setItem('api_key', q.get('key'));
+  return q.get('key') || localStorage.getItem('api_key') || '';
+})();
+
+function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (KEY) headers['X-Screener-Key'] = KEY;
+  return fetch(API + path, { ...opts, headers });
+}
+
 const $ = (s) => document.querySelector(s);
 const el = (t, c, txt) => { const n = document.createElement(t); if (c) n.className = c; if (txt != null) n.textContent = txt; return n; };
 
@@ -86,7 +108,18 @@ const fmtTime = (iso) => {
 
 /* ------------------------------------------------------------- bootstrap */
 async function boot() {
-  S.cfg = await (await fetch('/api/config')).json();
+  let cfgRes;
+  try {
+    cfgRes = await api('/api/config');
+  } catch (e) {
+    showEmpty(`Cannot reach the API at <b>${API || 'this origin'}</b> — ${e.message}`);
+    return;
+  }
+  if (cfgRes.status === 401) {
+    showEmpty('Unauthorized — append <b>?key=YOUR_KEY</b> to the URL once and it is remembered.');
+    return;
+  }
+  S.cfg = await cfgRes.json();
   S.params = { ...S.cfg.params };
 
   const u = $('#universe');
@@ -98,9 +131,9 @@ async function boot() {
   buildParamForm();
   wire();
 
-  const st = await (await fetch('/api/status')).json();
+  const st = await (await api('/api/status')).json();
   if (st.has_results) {
-    const r = await (await fetch('/api/results')).json();
+    const r = await (await api('/api/results')).json();
     S.rows = r.rows; S.meta = r.meta;
     if (S.meta.lookback) $('#lookback').value = String(S.meta.lookback);
     if (S.meta.universe) $('#universe').value = S.meta.universe;
@@ -173,7 +206,7 @@ async function runScan() {
     lookback: Number($('#lookback').value),
     params: S.params,
   };
-  const r = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await api('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) { setBusy(false); status('Scan already running', true); return; }
   startPoll();
 }
@@ -181,7 +214,7 @@ async function runScan() {
 function startPoll() {
   clearInterval(S.poll);
   S.poll = setInterval(async () => {
-    const st = await (await fetch('/api/status')).json();
+    const st = await (await api('/api/status')).json();
     const pctDone = st.total ? (st.done / st.total * 100) : 0;
     $('#progress').querySelector('.bar').style.width = pctDone + '%';
     if (st.state === 'running') {
@@ -192,7 +225,7 @@ function startPoll() {
     clearInterval(S.poll); setBusy(false);
     $('#progress').querySelector('.bar').style.width = '0%';
     if (st.state === 'error') { status('Scan failed: ' + st.message, true); return; }
-    const res = await (await fetch('/api/results')).json();
+    const res = await (await api('/api/results')).json();
     S.rows = res.rows; S.meta = res.meta;
     detectFresh();
     render();
@@ -487,7 +520,7 @@ async function openDrawer(symbol) {
 
   CHART = null; drawAll();
   try {
-    CHART = await (await fetch('/api/chart?key=' + encodeURIComponent(r.instrument_key))).json();
+    CHART = await (await api('/api/chart?key=' + encodeURIComponent(r.instrument_key))).json();
   } catch (e) { CHART = null; }
   drawAll();
 }

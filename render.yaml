@@ -1,0 +1,57 @@
+# Render Blueprint. In the dashboard: New > Blueprint, point it at this
+# repo, and Render reads this file. Set UPSTOX_TOKEN when it asks.
+#
+# Region is Singapore because that is Render's closest point of presence to
+# Upstox's Indian endpoints; a cold NSE scan makes ~9,000 API calls and the
+# round trip dominates it.
+services:
+  - type: web
+    name: swing-screener
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn screener.server:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 75
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Paste your Upstox token in the dashboard - never commit it.
+      - key: UPSTOX_TOKEN
+        sync: false
+      # Generated once by Render. Every request must send it, as an
+      # X-Screener-Key header or ?key=... - otherwise anyone who finds the
+      # URL can start scans against your token. Copy it from the dashboard
+      # and open the site as  https://<service>.onrender.com/?key=<value>
+      - key: SCREENER_ACCESS_KEY
+        generateValue: true
+      # Only needed if you host the UI separately (Vercel). Set it to that
+      # origin, e.g. https://ssing.vercel.app
+      - key: SCREENER_CORS_ORIGINS
+        sync: false
+
+# ---------------------------------------------------------------------
+# Free plan caveats, both of which bite this app specifically:
+#
+#   * The instance sleeps after ~15 minutes idle and cold-starts on the
+#     next request. A scan running when it sleeps is killed.
+#   * The filesystem is wiped on every deploy and restart, so the candle
+#     cache goes with it and the next scan is a cold one (~2 min for F&O,
+#     ~22 min for all 3,149 NSE names).
+#
+# To keep the cache, move to the Starter plan and uncomment both blocks
+# below - a disk cannot be attached to a free service.
+#
+#     plan: starter
+#     disk:
+#       name: candle-cache
+#       mountPath: /var/data
+#       sizeGB: 2
+#
+# and add:
+#
+#     - key: SCREENER_DATA_DIR
+#       value: /var/data
+#
+# On the free plan, prefer the F&O universe: 210 symbols, ~2 minutes cold.
+# ---------------------------------------------------------------------

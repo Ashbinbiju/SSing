@@ -24,7 +24,11 @@ import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE = ROOT / "data" / "cache" / "hourly"
+
+# On a host with a mounted disk (Render) point this at the mount, so the
+# candle cache survives restarts instead of forcing a cold scan.
+DATA_DIR = Path(os.environ.get("SCREENER_DATA_DIR") or (ROOT / "data"))
+CACHE = DATA_DIR / "cache" / "hourly"
 CACHE.mkdir(parents=True, exist_ok=True)
 
 BASE = "https://api.upstox.com/v3/historical-candle"
@@ -34,6 +38,16 @@ IST = "Asia/Kolkata"
 MAX_WINDOW_DAYS = 90
 
 COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
+
+
+def today_ist() -> date:
+    """The market's calendar day.
+
+    Servers run UTC. Between 00:00 and 05:30 IST `date.today()` there is
+    still yesterday, which would end every fetch window a day early and
+    quietly miss the latest session.
+    """
+    return pd.Timestamp.now(tz=IST).date()
 
 # NSE cash session, minutes past midnight IST.
 SESSION_OPEN_MIN = 9 * 60 + 15     # 09:15
@@ -313,7 +327,7 @@ def hourly(
     if fold_stub is None:
         fold_stub = fold_stub_default()
     path = _cache_path(key)
-    today = date.today()
+    today = today_ist()
     want_from = today - timedelta(days=int(months * 31))
 
     df = _empty()
@@ -388,7 +402,7 @@ def hourly(
     return df[df["timestamp"] >= cut].reset_index(drop=True)
 
 
-DAILY_CACHE = ROOT / "data" / "cache" / "daily"
+DAILY_CACHE = DATA_DIR / "cache" / "daily"
 DAILY_CACHE.mkdir(parents=True, exist_ok=True)
 
 
@@ -415,11 +429,11 @@ def daily(
         except Exception:
             df = _empty()
 
-    target = upto or date.today()
+    target = upto or today_ist()
     stale = df.empty or df["timestamp"].iloc[-1].date() < target
     if refresh and stale:
         enc = urllib.parse.quote(key, safe="")
-        end = date.today()
+        end = today_ist()
         start = end - timedelta(days=days)
         fresh = _frame(_get(f"{BASE}/{enc}/days/1/{end.isoformat()}/{start.isoformat()}"))
         if not fresh.empty:

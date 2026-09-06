@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import webbrowser
 from pathlib import Path
@@ -108,8 +109,10 @@ def main():
     s.set_defaults(fn=cmd_scan)
 
     v = sub.add_parser("serve", help="start the web UI")
-    v.add_argument("--host", default="127.0.0.1")
-    v.add_argument("--port", type=int, default=8777)
+    v.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"),
+                   help="0.0.0.0 to accept outside connections (set HOST env on a server)")
+    v.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8777")),
+                   help="defaults to $PORT, which is what Render sets")
     v.add_argument("--open", action="store_true", help="open a browser window")
     v.set_defaults(fn=cmd_serve)
 

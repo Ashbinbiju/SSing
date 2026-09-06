@@ -15,8 +15,10 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from .upstox import DATA_DIR
+
 ROOT = Path(__file__).resolve().parent.parent
-MASTER = ROOT / "data" / "NSE.csv.gz"
+MASTER = DATA_DIR / "NSE.csv.gz"
 MASTER_URL = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.csv.gz"
 
 _FUT = re.compile(r"^(.*?)\d{2}[A-Z]{3}FUT$")

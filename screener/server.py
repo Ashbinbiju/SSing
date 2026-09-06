@@ -14,20 +14,51 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import os
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import scan as scanner
 from . import universe as un
+from . import upstox as ux
 from .strategy import Params
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).resolve().parent / "web"
-STATE = ROOT / "data" / "cache" / "last_scan.json"
+STATE = ux.DATA_DIR / "cache" / "last_scan.json"
 
 app = FastAPI(title="1H Swing Screener", docs_url=None, redoc_url=None)
+
+# --------------------------------------------------------------- access
+# Deployed on a public URL this app is worth protecting: anyone who finds
+# it can start scans that burn the Upstox rate limit against your token.
+# Set SCREENER_ACCESS_KEY and every request must carry it, as an
+# `X-Screener-Key` header or a `?key=` parameter. Unset, nothing changes.
+ACCESS_KEY = os.environ.get("SCREENER_ACCESS_KEY", "").strip()
+
+# Only needed when the UI is served from somewhere else (Vercel) and the
+# API lives here. Comma-separated origins, or "*" for any.
+ORIGINS = [o.strip() for o in os.environ.get("SCREENER_CORS_ORIGINS", "").split(",") if o.strip()]
+if ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ORIGINS,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def gate(request: Request, call_next):
+    if ACCESS_KEY and request.method != "OPTIONS" and request.url.path not in ("/api/health",):
+        given = request.headers.get("x-screener-key") or request.query_params.get("key", "")
+        if given != ACCESS_KEY:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 _lock = threading.Lock()
 _progress = scanner.Progress()
@@ -185,4 +216,11 @@ app.mount("/static", StaticFiles(directory=str(WEB)), name="static")
 
 @app.get("/api/health")
 def health():
-    return JSONResponse({"ok": True})
+    ok = True
+    detail = "ready"
+    try:
+        ux.token()
+    except Exception as exc:
+        ok, detail = False, str(exc)
+    return JSONResponse({"ok": ok, "detail": detail, "market_date": str(ux.today_ist())},
+                        status_code=200 if ok else 503)
