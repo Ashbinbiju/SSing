@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1H Swing Screener — EMA 4/9 + MACD + DMI/ADX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>Swing Screener</h1>
+      <p>EMA 4/9 &middot; MACD &middot; DMI/ADX &mdash; <b>1 hour</b></p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label class="field">
+      <span>Universe</span>
+      <select id="universe"></select>
+    </label>
+    <label class="field">
+      <span>Signal window</span>
+      <select id="lookback">
+        <option value="1">Last bar only</option>
+        <option value="3" selected>Last 3 bars</option>
+        <option value="5">Last 5 bars</option>
+        <option value="6">Last 6 bars (1 day)</option>
+        <option value="12">Last 12 bars (2 days)</option>
+        <option value="30">Last 30 bars (1 week)</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Auto rescan</span>
+      <select id="auto">
+        <option value="0" selected>Off</option>
+        <option value="5">Every 5 min</option>
+        <option value="15">Every 15 min</option>
+        <option value="30">Every 30 min</option>
+        <option value="60">Every hour</option>
+      </select>
+    </label>
+    <button id="settings-btn" class="ghost" title="Indicator inputs">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 13-.3 1.2 1.6 1.4-1.5 2.6-2-.6-1 .7-.4 2h-3l-.4-2-1-.7-2 .6-1.5-2.6 1.6-1.4L9.2 13l-1.7-1.1.4-1.2L9.4 9l.3-1.2L8.1 6.4l1.5-2.6 2 .6 1-.7.4-2h3l.4 2 1 .7 2-.6 1.5 2.6-1.6 1.4.3 1.2"/></svg>
+      Inputs
+    </button>
+    <button id="theme-btn" class="ghost icon" title="Toggle theme">◐</button>
+    <button id="scan-btn" class="primary">
+      <span class="spin" hidden></span><span class="label">Run scan</span>
+    </button>
+  </div>
+</header>
+
+<div class="statusbar">
+  <div id="progress" class="progress"><div class="bar"></div></div>
+  <div class="status-text">
+    <span id="status-main">Ready</span>
+    <span id="status-sub" class="dim"></span>
+  </div>
+  <div class="legend">
+    <span><i class="dot strong"></i>Strong buy</span>
+    <span><i class="dot buy"></i>Buy</span>
+    <span><i class="dot div"></i>Divergence</span>
+    <span><i class="dot watch"></i>Watch</span>
+  </div>
+</div>
+
+<nav class="tabs" id="tabs"></nav>
+
+<div class="toolbar">
+  <div class="search">
+    <svg viewBox="0 0 24 24" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="search" type="search" placeholder="Filter symbol or company…" autocomplete="off">
+  </div>
+  <label class="field inline">
+    <span>Daily trend</span>
+    <select id="trend" title="Higher-timeframe context. Not part of the strategy.">
+      <option value="">Any</option>
+      <option value="UP">Uptrend only</option>
+      <option value="UPMIX">Uptrend + mixed</option>
+      <option value="DOWN">Downtrend only</option>
+    </select>
+  </label>
+  <label class="field inline">
+    <span>Min price</span>
+    <select id="minprice">
+      <option value="0">Any</option>
+      <option value="5">₹5</option>
+      <option value="10" selected>₹10</option>
+      <option value="25">₹25</option>
+      <option value="50">₹50</option>
+      <option value="100">₹100</option>
+    </select>
+  </label>
+  <label class="field inline">
+    <span>Min turnover</span>
+    <select id="minturn">
+      <option value="0">Any</option>
+      <option value="1">₹1 Cr/day</option>
+      <option value="5" selected>₹5 Cr/day</option>
+      <option value="25">₹25 Cr/day</option>
+      <option value="100">₹100 Cr/day</option>
+      <option value="500">₹500 Cr/day</option>
+    </select>
+  </label>
+  <label class="field inline">
+    <span>Min ADX now</span>
+    <select id="minadx">
+      <option value="0" selected>Any</option>
+      <option value="20">20</option>
+      <option value="25">25</option>
+      <option value="30">30</option>
+      <option value="40">40</option>
+    </select>
+  </label>
+  <span class="grow"></span>
+  <span id="count" class="dim"></span>
+  <button id="csv-btn" class="ghost small">Export CSV</button>
+</div>
+
+<main>
+  <div class="table-wrap">
+    <table id="grid">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+    <div id="empty" class="empty" hidden></div>
+  </div>
+</main>
+
+<!-- ------------------------------------------------ detail drawer -->
+<aside id="drawer" class="drawer" hidden>
+  <div class="drawer-head">
+    <div>
+      <h2 id="d-symbol"></h2>
+      <p id="d-name" class="dim"></p>
+    </div>
+    <div class="drawer-price">
+      <b id="d-ltp"></b>
+      <span id="d-chg"></span>
+    </div>
+    <button id="drawer-close" class="ghost icon" title="Close">✕</button>
+  </div>
+
+  <div id="d-signal" class="signal-card"></div>
+
+  <div class="chart-block">
+    <div class="chart-head"><span>Price &middot; EMA 4 / EMA 9</span><span id="d-hover" class="dim"></span></div>
+    <canvas id="c-price" height="260"></canvas>
+    <div class="chart-head"><span>MACD 12 / 26 / 9</span></div>
+    <canvas id="c-macd" height="110"></canvas>
+    <div class="chart-head"><span>DMI 14 &middot; ADX 14</span></div>
+    <canvas id="c-adx" height="110"></canvas>
+  </div>
+
+  <h3 class="sec">Indicator status <span class="dim" id="d-bartime">— last closed bar</span></h3>
+  <table class="info" id="d-info"></table>
+
+  <h3 class="sec">Numbers</h3>
+  <div class="numgrid" id="d-nums"></div>
+</aside>
+<div id="scrim" class="scrim" hidden></div>
+
+<!-- ------------------------------------------------ settings modal -->
+<div id="modal" class="modal" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Indicator inputs</h2>
+      <p class="dim">Identical to the Pine script. Defaults shipped with the strategy.</p>
+      <button id="modal-close" class="ghost icon">✕</button>
+    </div>
+    <div class="sheet-body" id="param-form"></div>
+    <div class="sheet-foot">
+      <button id="reset-params" class="ghost">Reset to defaults</button>
+      <span class="grow"></span>
+      <button id="apply-params" class="primary">Apply &amp; rescan</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

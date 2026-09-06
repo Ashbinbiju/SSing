@@ -1,0 +1,13 @@
+# secrets - never commit
+.env
+
+# cached market data (regenerated on first scan; ~340 MB)
+data/cache/
+data/signals/
+data/*.csv.gz
+
+results/
+__pycache__/
+*.pyc
+*.parquet
+.venv/
