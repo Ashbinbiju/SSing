@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from . import indicators as ta
 from . import universe as un
 from . import upstox as ux
 from .strategy import Params, WARMUP_BARS, compute
@@ -160,6 +161,9 @@ def evaluate(sym: str, name: str, key: str, df: pd.DataFrame, p: Params, lookbac
     vol5 = r.loc[days.isin(recent), "volume"].sum() / max(len(recent), 1)
     px = float(last["close"])
 
+    atr14 = ta.rma(ta.true_range(r["high"], r["low"], r["close"]), 14).iloc[-1]
+    atr_pct = float(atr14 / px * 100) if np.isfinite(atr14) and px else 0.0
+
     return {
         "symbol": sym,
         "name": name,
@@ -196,6 +200,13 @@ def evaluate(sym: str, name: str, key: str, df: pd.DataFrame, p: Params, lookbac
         "minusDI": _f(last["minusDI"]),
         "di_spread": _f(last["plusDI"] - last["minusDI"]),
         "adx_rising": _b(last["adx"] > r["adx"].iloc[-2]) if len(r) > 1 else False,
+        # ATR as % of price, and what a 0.35% round trip costs against a
+        # 1.5*ATR stop. Backtesting found this is the only stock-selection
+        # variable that survived a hold-out - and mostly because below
+        # ~1.3% ATR friction eats the signal before it starts. See
+        # RESEARCH.md; it is context, not a signal.
+        "atr_pct": _f(atr_pct),
+        "cost_r": _f(0.35 / (1.5 * atr_pct)) if atr_pct and atr_pct > 0 else None,
         "trend_bars": _bars_since_true(r["emaBullCross"]),
         "div_bars_ago": _bars_since_true(r["newBullishDivergence"]),
         "strongTrend": _b(last["strongTrend"]),

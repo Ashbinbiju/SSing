@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 *.parquet
 .venv/
+research/bars/
+research/trades.parquet
+research/universe_daily.parquet

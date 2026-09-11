@@ -88,6 +88,9 @@ const COLS = [
   { k: 'adx', t: 'ADX', tip: NOW, now: true },
   { k: 'di_spread', t: '+DI −DI', tip: NOW, now: true },
   { k: 'bullishDivergence', t: 'Div', tip: NOW, now: true },
+  { k: 'atr_pct', t: 'ATR% / cost',
+    tip: 'ATR as % of price, and what a 0.35% round trip costs against a 1.5xATR stop. '
+       + 'Below ~1.3% ATR friction eats the signal before it starts — see RESEARCH.md.' },
   { k: 'trend', t: 'Daily trend', l: true,
     tip: 'Daily chart: above/below the 50 and 200 DMA and 6-month return. Context only — the signal does not use it.' },
   { k: 'score', t: 'Score' },
@@ -378,6 +381,7 @@ function render() {
       <td class="num ${r.adxOK ? 'up' : ''}">${num(r.adx, 1)}</td>
       <td class="num ${r.diBull ? 'up' : 'dn'}">${num(r.di_spread, 1)}</td>
       <td>${tick(r.bullishDivergence)}</td>
+      <td class="num">${atrCell(r)}</td>
       <td class="l">${trendCell(r)}</td>
       <td class="num">${num(r.score, 0)}<span class="meter"><i style="width:${r.score}%"></i></span></td>
       <td class="num">${r.turnover_cr == null ? '—' : '₹' + num(r.turnover_cr, r.turnover_cr < 10 ? 1 : 0) + ' Cr'}</td>
@@ -430,6 +434,17 @@ function badge(r) {
   const tip = (gone ? `Fired ${r.bars_ago} bars ago. ` : '') + `Setup ${st.label} — ${st.tip}`;
   return `<span class="badge ${CLS[r.bucket]}${gone ? ' faded' : ''}" title="${tip}">`
     + `${r.bucket}${gone ? ' ↓' : ''}</span>`;
+}
+
+/* Backtesting found volatility is the only stock-selection variable that
+   survived a hold-out, and mostly because of friction: a 0.35% round trip
+   costs 0.35/(1.5*ATR%) in R, so 0.41R on a 0.56% ATR name. Shown as
+   context, not as a signal. */
+function atrCell(r) {
+  if (r.atr_pct == null) return '<span class="no">—</span>';
+  const heavy = (r.cost_r || 0) > 0.25;
+  return `<span class="${heavy ? 'dn' : ''}" title="cost drag ${num(r.cost_r, 2)}R per trade">`
+    + `${num(r.atr_pct, 2)}%<span class="sub2"> ${num(r.cost_r, 2)}R</span></span>`;
 }
 
 const TREND = { UP: ['up', '▲ Uptrend'], MIXED: ['dim', '– Mixed'], DOWN: ['dn', '▼ Downtrend'] };
@@ -511,6 +526,8 @@ async function openDrawer(symbol) {
     ['Trend age', r.trend_bars == null ? '—' : r.trend_bars + ' bars'],
     ['Bar volume', (r.volume || 0).toLocaleString('en-IN')],
     ['Turnover/day', '₹' + num(r.turnover_cr, r.turnover_cr < 10 ? 1 : 0) + ' Cr'],
+    ['ATR % of price', num(r.atr_pct, 2) + '%'],
+    ['Cost drag', num(r.cost_r, 2) + ' R per trade'],
     ['Daily trend', r.trend || '—'],
     ['vs 50 DMA', r.above_sma50 == null ? '—' : (r.above_sma50 ? 'above' : 'below')],
     ['vs 200 DMA', r.above_sma200 == null ? '—' : (r.above_sma200 ? 'above' : 'below')],
@@ -767,7 +784,7 @@ function exportCsv() {
   const keys = ['symbol', 'name', 'bucket', 'status', 'signal', 'bars_ago', 'signal_at', 'signal_price',
     'ltp', 'day_chg_pct', 'adx', 'plusDI', 'minusDI', 'ema4', 'ema9', 'macdLine', 'signalLine',
     'macdHistogram', 'emaBullTrend', 'priceAboveEMA', 'macdAboveSignal', 'bullishDivergence',
-    'turnover_cr', 'score', 'trend', 'above_sma50', 'above_sma200', 'ret_3m',
+    'turnover_cr', 'atr_pct', 'cost_r', 'score', 'trend', 'above_sma50', 'above_sma200', 'ret_3m',
     'ret_6m', 'off_52w_high', 'bar_time'];
   const esc = v => v == null ? '' : /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
   const csv = [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k])).join(','))].join('\n');
