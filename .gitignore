@@ -14,3 +14,5 @@ __pycache__/
 research/bars/
 research/trades.parquet
 research/universe_daily.parquet
+research/trades_intraday.parquet
+research/exit_grid.parquet

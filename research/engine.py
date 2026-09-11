@@ -116,7 +116,79 @@ def features(r: pd.DataFrame) -> pd.DataFrame:
     return f.shift(1)
 
 
-def trades_for(sym: str, p: Params, ex: Exits) -> pd.DataFrame:
+def intraday_features(r: pd.DataFrame) -> pd.DataFrame:
+    """Fast features, known the moment the signal bar closes.
+
+    These are NOT shifted. The signal is computed from bar i's close and the
+    fill happens at bar i+1's open, so everything bar i knows about itself is
+    legitimately available. Shifting them would throw away exactly the
+    information an intraday selection rule is supposed to use.
+    """
+    ts = r["timestamp"]
+    day = ts.dt.normalize()
+    g = r.groupby(day)
+    f = pd.DataFrame(index=r.index)
+
+    f["bar_of_day"] = g.cumcount()                      # 0 = 09:15 ... 5 = 14:15
+    f["hour"] = ts.dt.hour
+
+    day_open = g["open"].transform("first")
+    first = f["bar_of_day"] == 0
+    prev_close = r["close"].shift(1).where(first)
+    f["gap_pct"] = (day_open / prev_close.groupby(day).transform("first") - 1) * 100
+    f["day_move"] = (r["close"] / day_open - 1) * 100   # move so far today
+
+    dh = g["high"].cummax()
+    dl = g["low"].cummin()
+    rng = (dh - dl).replace(0, np.nan)
+    f["range_pos"] = (r["close"] - dl) / rng * 100      # 100 = at the day's high
+    f["day_range_pct"] = rng / r["close"] * 100
+
+    pv = (r["close"] * r["volume"]).groupby(day).cumsum()
+    vv = r["volume"].groupby(day).cumsum().replace(0, np.nan)
+    f["dist_vwap"] = (r["close"] / (pv / vv) - 1) * 100
+
+    # volume on this bar against its own recent norm (20 sessions)
+    f["rel_vol"] = r["volume"] / r["volume"].rolling(20 * BARS_PER_DAY).mean()
+
+    # range expansion: today's range so far against the usual bar range
+    f["range_exp"] = rng / atr(r, 14)
+
+    up = (r["close"] > r["close"].shift(1)).astype(int)
+    f["consec_up"] = up * (up.groupby((up != up.shift()).cumsum()).cumcount() + 1)
+
+    return f
+
+
+def market_index(bars_dir=BARS, min_symbols: int = 50) -> pd.Series:
+    """Equal-weight hourly index of the panel, for regime features.
+
+    Built from the same 400 names, which are today's most liquid - so it
+    carries survivorship bias and is only used as a coarse up/down regime
+    read, never as a return benchmark.
+    """
+    frames = []
+    for p in sorted(bars_dir.glob("*.parquet")):
+        d = pd.read_parquet(p, columns=["timestamp", "close"])
+        d["timestamp"] = pd.to_datetime(d["timestamp"], utc=True)
+        s = d.set_index("timestamp")["close"]
+        s = s[~s.index.duplicated()]
+        frames.append(s.pct_change())
+    wide = pd.concat(frames, axis=1)
+    ew = wide.mean(axis=1, skipna=True)
+    ew = ew[wide.notna().sum(axis=1) >= min_symbols]
+    return (1 + ew.fillna(0)).cumprod()
+
+
+def market_features(mkt: pd.Series) -> pd.DataFrame:
+    f = pd.DataFrame(index=mkt.index)
+    f["mkt_ret_5d"] = mkt.pct_change(5 * BARS_PER_DAY) * 100
+    f["mkt_ret_20d"] = mkt.pct_change(20 * BARS_PER_DAY) * 100
+    f["mkt_above_50d"] = (mkt > mkt.rolling(50 * BARS_PER_DAY).mean()).astype(float)
+    return f.shift(1)
+
+
+def trades_for(sym: str, p: Params, ex: Exits, mktf: pd.DataFrame | None = None) -> pd.DataFrame:
     """Every entry the script fires on this symbol, with its outcome."""
     d = load(sym)
     if d is None:
@@ -124,7 +196,13 @@ def trades_for(sym: str, p: Params, ex: Exits) -> pd.DataFrame:
 
     r = compute(d, p)
     f = features(r)
+    intra = intraday_features(r)
     a = atr(r, ex.atr_len)
+
+    if mktf is not None:
+        mk = mktf.reindex(r["timestamp"].dt.tz_convert("UTC")).reset_index(drop=True)
+    else:
+        mk = pd.DataFrame(index=r.index)
 
     o = r["open"].to_numpy()
     h = r["high"].to_numpy()
@@ -185,6 +263,12 @@ def trades_for(sym: str, p: Params, ex: Exits) -> pd.DataFrame:
             "above200": bool(f["above200"].iloc[i]) if pd.notna(f["above200"].iloc[i]) else False,
             "adx_1h": float(r["adx"].iloc[i]),
             "di_spread": float(r["plusDI"].iloc[i] - r["minusDI"].iloc[i]),
+            **{k: (float(intra[k].iloc[i]) if pd.notna(intra[k].iloc[i]) else np.nan)
+               for k in ("bar_of_day", "gap_pct", "day_move", "range_pos",
+                         "day_range_pct", "dist_vwap", "rel_vol", "range_exp",
+                         "consec_up")},
+            **{k: (float(mk[k].iloc[i]) if (k in mk and pd.notna(mk[k].iloc[i])) else np.nan)
+               for k in ("mkt_ret_5d", "mkt_ret_20d", "mkt_above_50d")},
         })
         i = exit_i + 1                        # one position per symbol at a time
     return pd.DataFrame(out)
