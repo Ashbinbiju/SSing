@@ -164,6 +164,17 @@ def evaluate(sym: str, name: str, key: str, df: pd.DataFrame, p: Params, lookbac
     atr14 = ta.rma(ta.true_range(r["high"], r["low"], r["close"]), 14).iloc[-1]
     atr_pct = float(atr14 / px * 100) if np.isfinite(atr14) and px else 0.0
 
+    # How far the current session has already travelled, in ATRs. Backtesting
+    # found this monotonic (PF 1.21 -> 0.88 across quintiles): once the day's
+    # range is 3-9x ATR the move is spent and the entry is a chase.
+    today_bars = r[r["timestamp"].dt.date == r["timestamp"].iloc[-1].date()]
+    day_rng = float(today_bars["high"].max() - today_bars["low"].min()) if len(today_bars) else 0.0
+    range_exp = float(day_rng / atr14) if np.isfinite(atr14) and atr14 > 0 else None
+
+    # The 09:15 bar was the only session slot with a positive read in both
+    # halves (PF 1.11 in, 1.15 out), and 54% of signals fire there anyway.
+    opening_bar = bool(sig_at is not None and sig_at.hour == 9)
+
     return {
         "symbol": sym,
         "name": name,
@@ -207,6 +218,16 @@ def evaluate(sym: str, name: str, key: str, df: pd.DataFrame, p: Params, lookbac
         # RESEARCH.md; it is context, not a signal.
         "atr_pct": _f(atr_pct),
         "cost_r": _f(0.35 / (1.5 * atr_pct)) if atr_pct and atr_pct > 0 else None,
+        "range_exp": _f(range_exp),
+        "opening_bar": opening_bar,
+        # All three filters that replicated out-of-sample AND have a
+        # mechanical cause. Passing does not make a signal good - it means
+        # it is not one of the structurally unprofitable ones. RESEARCH.md.
+        "research_ok": bool(
+            atr_pct > 1.6
+            and (range_exp is not None and range_exp < 2.21)
+            and opening_bar
+        ),
         "trend_bars": _bars_since_true(r["emaBullCross"]),
         "div_bars_ago": _bars_since_true(r["newBullishDivergence"]),
         "strongTrend": _b(last["strongTrend"]),

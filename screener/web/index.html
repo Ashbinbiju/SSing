@@ -77,6 +77,13 @@
     <input id="search" type="search" placeholder="Filter symbol or company…" autocomplete="off">
   </div>
   <label class="field inline">
+    <span>Research filter</span>
+    <select id="research" title="ATR%&gt;1.6, range expansion&lt;2.21, signal on the 09:15 bar — the three filters that replicated out-of-sample. See RESEARCH.md.">
+      <option value="">Off</option>
+      <option value="1">Passes all three</option>
+    </select>
+  </label>
+  <label class="field inline">
     <span>Daily trend</span>
     <select id="trend" title="Higher-timeframe context. Not part of the strategy.">
       <option value="">Any</option>
